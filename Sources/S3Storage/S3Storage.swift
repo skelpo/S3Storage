@@ -95,7 +95,7 @@ public struct S3Storage: Storage, ServiceType {
                 throw StorageError(identifier: "fileName", reason: "Unable to extract file name from path `\(file)`")
             }
             
-            return self.delete(file: path).flatMap {
+            return self.delete(file: file).flatMap {
                 let file = Vapor.File(data: data, filename: name)
                 
                 return self.store(file: file, at: path).transform(to: file)
