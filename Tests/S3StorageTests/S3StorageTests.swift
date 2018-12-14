@@ -76,8 +76,14 @@ final class S3StorageTests: XCTestCase {
         XCTAssertEqual(file.data, self.data)
     }
     
+    func testDelete()throws {
+        let storage = try self.app.make(S3Storage.self)
+        try XCTAssertNoThrow(storage.delete(file: "markdown/test.md").wait())
+    }
+    
     static var allTests: [(String, (S3StorageTests) -> ()throws -> ())] = [
         ("testStore", testStore),
-        ("testFetch", testFetch)
+        ("testFetch", testFetch),
+        ("testDelete", testDelete)
     ]
 }
