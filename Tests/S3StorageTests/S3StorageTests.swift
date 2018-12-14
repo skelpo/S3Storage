@@ -64,7 +64,7 @@ final class S3StorageTests: XCTestCase {
         
         let path = try storage.store(file: file, at: "markdown").wait()
         
-        XCTAssertEqual(path, "https://s3.us-east-1.amazonaws.com/ck-s3storage-test/markdown/test.md")
+        XCTAssertEqual(path, "markdown/test.md")
     }
     
     func testFetch()throws {

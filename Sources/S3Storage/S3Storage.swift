@@ -5,6 +5,15 @@ import S3
 ///
 /// `S3Storage` use an `S3StorageClient` instead of `S3Client`. We conform the basic `S3` type for you, so as long as you register
 /// your `S3` instance properly, everything should work as normal.
+///
+///     try services.register(S3(defaultBucket: bucket, signer: signer), as: S3StorageClient.self)
+///
+/// When uploading a file to Amazon S3, you can pass a path into the `.store(file:at:)` method. If you do, the file's localtion will be
+/// `path/filename`. If no path is passed in and there is no default path, the file will be located at `filename`.
+///
+/// When accessing a file to read, override, or delete it, use the reletive path instead of the full URL.
+///
+///     storage.fetch(file: "documents/README.md")
 public struct S3Storage: Storage, ServiceType {
     
     /// See `ServiceType.makeService(for:)`.
@@ -51,7 +60,7 @@ public struct S3Storage: Storage, ServiceType {
             )
             
             return try client.put(file: upload, on: container).map { response in
-                return try client.urlBuilder(for: self.container).url(file: response.path).description
+                return response.path
             }
         } catch let error {
             return self.container.future(error: error)
