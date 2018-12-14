@@ -34,19 +34,23 @@ public struct S3Storage: Storage, ServiceType {
         do {
             let client = try self.container.make(S3StorageClient.self)
             
-            guard let path = path ?? self.defaultPath else {
-                throw StorageError(identifier: "pathRequired", reason: "No path received for the file being uploaded")
+            let s3Path: String
+            if let unwrappedPath = path {
+                s3Path = unwrappedPath + "/" + file.filename
+            } else if let unwrappedPath = self.defaultPath {
+                s3Path = unwrappedPath + "/" + file.filename
+            } else {
+                s3Path = file.filename
             }
             
             let type = file.contentType?.description ?? MediaType.plainText.description
             let upload = File.Upload(
                 data: file.data,
-                destination: path,
+                destination: s3Path,
                 mime: type
             )
             
             return try client.put(file: upload, on: container).map { response in
-                print(response.path)
                 return try client.urlBuilder(for: self.container).url(file: response.path).description
             }
         } catch let error {
