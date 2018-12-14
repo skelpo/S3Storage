@@ -76,6 +76,15 @@ final class S3StorageTests: XCTestCase {
         XCTAssertEqual(file.data, self.data)
     }
     
+    func testWrite()throws {
+        let storage = try self.app.make(S3Storage.self)
+        
+        let updated = try storage.write(file: "markdown/test.md", with: "All new updated data!".data(using: .utf8)!).wait()
+        
+        XCTAssertEqual(updated.data, "All new updated data!".data(using: .utf8))
+        XCTAssertEqual(updated.filename, "test.md")
+    }
+    
     func testDelete()throws {
         let storage = try self.app.make(S3Storage.self)
         try XCTAssertNoThrow(storage.delete(file: "markdown/test.md").wait())
@@ -84,6 +93,7 @@ final class S3StorageTests: XCTestCase {
     static var allTests: [(String, (S3StorageTests) -> ()throws -> ())] = [
         ("testStore", testStore),
         ("testFetch", testFetch),
+        ("testWrite", testWrite),
         ("testDelete", testDelete)
     ]
 }
