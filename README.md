@@ -22,7 +22,7 @@ try services.register(S3(defaultBucket: bucket, signer: signer), as: S3StorageCl
 
 # API
 
-You can find API documentation [here](http://www.skelpo.codes/S3Storage).
+You can find API documentation [here](http://www.skelpo.codes/S3Storage/).
 
 # License
 
