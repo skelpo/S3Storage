@@ -14,73 +14,75 @@ import S3
 /// When accessing a file to read, override, or delete it, use the reletive path instead of the full URL.
 ///
 ///     storage.fetch(file: "documents/README.md")
-public struct S3Storage: Storage, ServiceType {
-    
-    /// See `ServiceType.makeService(for:)`.
-    public static func makeService(for worker: Container) throws -> S3Storage {
-        return S3Storage(container: worker)
-    }
+public struct S3Storage: Storage {
     
     /// The path that will be used if `nil` is passed into the `S3Storage.store(file:at:)` method
     public let defaultPath: String?
     
     /// The container used by the `S3Client` instance to create, read, and delete files.
-    internal let container: Container
+    internal let eventLoop: EventLoop
     
-    
+    private let client: S3Client
+
+    private let allocator: ByteBufferAllocator
+
     /// Creates a new `S3Storage` instance.
     ///
     /// - Parameters:
-    ///   - container: The container used by the `S3Client` instance to create, read, and delete files.
+    ///   - eventLoop: The event loop that the instance will live on and use for IO operations.
+    ///   - client: The S3 client used for making the API calls for the IO operations.
     ///   - defaultPath: The default path that files will be stored at.
-    public init(container: Container, defaultPath: String? = nil) {
-        self.container = container
+    public init(eventLoop: EventLoop, client: S3Client, defaultPath: String? = nil) {
+        self.client = client
+        self.eventLoop = eventLoop
         self.defaultPath = defaultPath
+
+        self.allocator = ByteBufferAllocator()
     }
-    
+
+    /// Creates a new `S3Storage` instance from a `Container`.
+    ///
+    /// - Parameter container: The container the get the event loop and make the `S3Client` from.
+    public init(container: Container)throws {
+        try self.init(eventLoop: container.eventLoop, client: container.make())
+    }
+
     /// See `Storage.store(file:at:)`
     public func store(file: Vapor.File, at path: String? = nil) -> EventLoopFuture<String> {
-        do {
-            let client = try self.container.make(S3StorageClient.self)
-            
-            let s3Path: String
-            if let unwrappedPath = path {
-                s3Path = unwrappedPath + "/" + file.filename
-            } else if let unwrappedPath = self.defaultPath {
-                s3Path = unwrappedPath + "/" + file.filename
-            } else {
-                s3Path = file.filename
-            }
-            
-            let type = file.contentType?.description ?? MediaType.plainText.description
-            let upload = File.Upload(
-                data: file.data,
-                destination: s3Path,
-                mime: type
-            )
-            
-            return try client.put(file: upload, on: container).map { response in
-                return response.path
-            }
-        } catch let error {
-            return self.container.future(error: error)
+        let s3Path: String
+        if let unwrappedPath = path {
+            s3Path = unwrappedPath + "/" + file.filename
+        } else if let unwrappedPath = self.defaultPath {
+            s3Path = unwrappedPath + "/" + file.filename
+        } else {
+            s3Path = file.filename
+        }
+
+        let type = file.contentType?.description ?? HTTPMediaType.plainText.description
+        let data = Data(file.data.readableBytesView)
+
+        let upload = File.Upload(
+            data: data,
+            destination: s3Path,
+            mime: type
+        )
+
+        return client.put(file: upload, on: self.eventLoop).map { response in
+            return response.path
         }
     }
     
     /// See `Storage.fetch(file:)`.
     public func fetch(file: String) -> EventLoopFuture<Vapor.File> {
-        do {
-            let client = try self.container.make(S3StorageClient.self)
-            
-            return try client.get(file: file, on: self.container).map { response in
-                guard let name = response.path.split(separator: "/").last.map(String.init) else {
-                    throw StorageError(identifier: "fileName", reason: "Unable to extract file name from path `\(response.path)`")
-                }
-                
-                return Vapor.File(data: response.data, filename: name)
+        return client.get(file: file, on: self.eventLoop).flatMapThrowing { response in
+            guard let name = response.path.split(separator: "/").last.map(String.init) else {
+                throw StorageError(identifier: "fileName", reason: "Unable to extract file name from path `\(response.path)`")
             }
-        } catch let error {
-            return self.container.future(error: error)
+
+            var buffer = self.allocator.buffer(capacity: response.data.count)
+            buffer.writeBytes(response.data)
+
+            return Vapor.File(data: buffer, filename: name)
         }
     }
     
@@ -88,7 +90,7 @@ public struct S3Storage: Storage, ServiceType {
     ///
     /// Amazon S3 does not support mutating files, so we just delete the existing one and upload a new version
     /// with the data passed in. The `options` parameter is ignored.
-    public func write(file: String, with data: Data, options: Data.WritingOptions = []) -> EventLoopFuture<Vapor.File> {
+    public func write(file: String, with data: Data) -> EventLoopFuture<Vapor.File> {
         do {
             let path = String(file.split(separator: "/").dropLast().joined())
             guard let name = file.split(separator: "/").last.map(String.init) else {
@@ -96,23 +98,19 @@ public struct S3Storage: Storage, ServiceType {
             }
             
             return self.delete(file: file).flatMap {
-                let file = Vapor.File(data: data, filename: name)
-                
+                var buffer = self.allocator.buffer(capacity: data.count)
+                buffer.writeBytes(data)
+
+                let file = Vapor.File(data: buffer, filename: name)
                 return self.store(file: file, at: path).transform(to: file)
             }
         } catch let error {
-            return self.container.future(error: error)
+            return self.eventLoop.future(error: error)
         }
     }
     
     /// See `Storage.delete(file:)`.
     public func delete(file: String) -> EventLoopFuture<Void> {
-        do {
-            let client = try self.container.make(S3StorageClient.self)
-            
-            return try client.delete(file: file, on: self.container)
-        } catch let error {
-            return self.container.future(error: error)
-        }
+        return client.delete(file: file, on: self.eventLoop)
     }
 }
